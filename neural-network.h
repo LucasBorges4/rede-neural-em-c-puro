@@ -8,12 +8,12 @@
 // Estrutura para peso e bias
 typedef struct {
     double slope; // peso para entrada x 
-    double bias;  // termo de bias
 } Weight;
 
 // Estrutura para neurônio
 typedef struct {
     Weight* weights; 
+    double bias;
     int weight_count; // normalmente igual ao número de entradas
     double (*activation_function)(double*, int); // função de ativação
     double output; // saída do neurônio
@@ -57,7 +57,12 @@ NeuralNetwork* create_neural_network(int layer_count, int* neurons_per_layer,
 void free_neural_network(NeuralNetwork* nn);
 
 // Forward propagation
-double forward_propagation(Layer* prev_layer, Layer* next_layer, double* input);
+double forward_propagation(Layer* prev_layer, Layer* next_layer, const double* input);
+
+
+// Backward propagation
+void backward_propagation(NeuralNetwork* nn, const double* expected_output, double learning_rate);
+
 
 // Debug
 void print_neural_network(const NeuralNetwork* nn);

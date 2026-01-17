@@ -16,12 +16,9 @@ double random_weight() {
     return ((double) rand() / RAND_MAX) * 2.0 - 1.0;
 }
 
-// -------------------- Inicialização --------------------
-
 void initialize_weights(Weight* weights, int count) {
     for (int i = 0; i < count; i++) {
         weights[i].slope = random_weight();
-        weights[i].bias  = random_weight();
     }
 }
 
@@ -30,6 +27,7 @@ void initialize_neurons(Neuron* neurons, int neuron_count, int input_count,
     for (int i = 0; i < neuron_count; i++) {
         neurons[i].weights = (Weight*) malloc(input_count * sizeof(Weight));
         neurons[i].weight_count = input_count;
+        neurons[i].bias = random_weight(); // bias único por neurônio
         neurons[i].activation_function = activation_function;
         neurons[i].output = 0.0;
         initialize_weights(neurons[i].weights, input_count);
@@ -122,28 +120,83 @@ void free_neural_network(NeuralNetwork* nn) {
 
 // -------------------- Forward Propagation --------------------
 
-double forward_propagation(Layer* prev_layer, Layer* next_layer, double* input) {
+double forward_propagation(Layer* prev_layer, Layer* next_layer, const double* input) {
     for (int j = 0; j < next_layer->neuron_count; j++) {
         Neuron* neuron = &next_layer->neurons[j];
-        double sum = 0.0;
+        double sum = neuron->bias; // começa com bias do neurônio
+
         for (int i = 0; i < neuron->weight_count; i++) {
             double in_val = (prev_layer == NULL) ? input[i] : prev_layer->neurons[i].output;
-            // Nota: bias por entrada (design atual). O convencional é bias único por neurônio.
-            sum += neuron->weights[i].slope * in_val + neuron->weights[i].bias;
+            sum += neuron->weights[i].slope * in_val;
         }
+
         neuron->output = neuron->activation_function(&sum, 1);
     }
     return next_layer->neurons[next_layer->neuron_count - 1].output;
 }
 
+
+// -------------------- Backward Propagation --------------------
+void backward_propagation(NeuralNetwork* nn, const double* expected_output, double learning_rate) {
+    if (!nn || nn->layer_count <= 0) return;
+
+    double* next_deltas = NULL;
+    int next_count = 0;
+
+    for (int l = nn->layer_count - 1; l >= 0; --l) {
+        Layer* layer = &nn->layers[l];
+        double* deltas = (double*) malloc(layer->neuron_count * sizeof(double));
+
+        for (int j = 0; j < layer->neuron_count; j++) {
+            Neuron* neuron = &layer->neurons[j];
+            double out = neuron->output;
+            double deriv = out * (1.0 - out); // derivada do sigmoid (ajuste se usar outra função)
+            double delta;
+
+            if (l == nn->layer_count - 1) {
+                double err = expected_output[j] - out;
+                delta = err * deriv;
+            } else {
+                double sum = 0.0;
+                Layer* next_layer = &nn->layers[l + 1];
+                for (int k = 0; k < next_count; k++) {
+                    sum += next_layer->neurons[k].weights[j].slope * next_deltas[k];
+                }
+                delta = sum * deriv;
+            }
+            deltas[j] = delta;
+        }
+
+        // Atualiza pesos e bias
+        for (int j = 0; j < layer->neuron_count; j++) {
+            Neuron* neuron = &layer->neurons[j];
+            double delta = deltas[j];
+
+            for (int i = 0; i < neuron->weight_count; i++) {
+                double input_val = (l == 0) ? nn->layers[0].neurons[i].output
+                                            : nn->layers[l - 1].neurons[i].output;
+                neuron->weights[i].slope += learning_rate * delta * input_val;
+            }
+            neuron->bias += learning_rate * delta;
+        }
+
+        if (next_deltas) free(next_deltas);
+        next_deltas = deltas;
+        next_count = layer->neuron_count;
+    }
+
+    if (next_deltas) free(next_deltas);
+}
+
 // -------------------- Debug --------------------
 
 void print_neuron(const Neuron* neuron) {
-    printf("Neuron: weights=%d, output=%f\n", neuron->weight_count, neuron->output);
+    printf("Neuron: weights=%d, bias=%f, output=%f\n", neuron->weight_count, neuron->bias, neuron->output);
     for (int i = 0; i < neuron->weight_count; i++) {
-        printf("  w[%d]=%f, b[%d]=%f\n", i, neuron->weights[i].slope, i, neuron->weights[i].bias);
+        printf("  w[%d]=%f\n", i, neuron->weights[i].slope);
     }
 }
+
 
 void print_layer(const Layer* layer) {
     printf("Layer: neurons=%d\n", layer->neuron_count);
